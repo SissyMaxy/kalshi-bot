@@ -112,7 +112,10 @@ class PositionManager:
 
         # Adaptive thresholds — survival mode tightens, learned params may adjust
         edge_reversal_threshold = -0.01 if survival else -0.03
-        edge_gone_threshold = 0.05 if survival else self.config.get("edge_gone_threshold", 0.03)
+        if trade["category"] == "weather":
+            edge_gone_threshold = -0.01  # weather: only exit if edge actually reverses
+        else:
+            edge_gone_threshold = 0.05 if survival else self.config.get("edge_gone_threshold", 0.03)
         stop_loss_threshold = -0.30 if survival else self.config.get("stop_loss_pct", -0.50)
 
         # EXIT: edge reversed
@@ -144,8 +147,8 @@ class PositionManager:
                     "ticker": ticker,
                 }
 
-        # EXIT: take profit near close
-        if hours_to_close < 2 and unrealized > 0:
+        # EXIT: take profit near close (non-weather — weather settles at $1)
+        if hours_to_close < 2 and unrealized > 0 and trade["category"] != "weather":
             return {
                 "trade_id": trade["id"], "action": "exit",
                 "reason": f"take_profit (${unrealized:+.2f})",

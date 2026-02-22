@@ -43,7 +43,7 @@ from safe_order import place_order_safe
 CONFIG = {
     "scan_interval_minutes": 5,
     "kelly_multiplier": 0.25,
-    "max_position_pct": 0.10,
+    "max_position_pct": 0.15,
     "max_category_pct": 0.20,
     "max_total_exposure_pct": 0.50,
     "min_edge_threshold": 0.08,
