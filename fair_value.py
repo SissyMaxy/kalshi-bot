@@ -219,11 +219,12 @@ class FairValueEstimator:
         nearest_threshold = self._get_nearest_threshold(market)
         if nearest_threshold is not None:
             distance = abs(forecast_temp - nearest_threshold)
-            if distance < 3.0:
+            min_distance = sigma * 0.4  # ~1.5°F at sigma=4.0
+            if distance < min_distance:
                 log.debug(
                     f"  Skip {market['ticker']}: forecast {forecast_temp}°F "
                     f"only {distance:.1f}°F from threshold {nearest_threshold} "
-                    f"(min 3°F required)"
+                    f"(min {min_distance:.1f}°F required at sigma={sigma:.1f})"
                 )
                 return None
 
@@ -261,40 +262,51 @@ class FairValueEstimator:
         """
         Adjust sigma values based on calibration results.
         Finds optimal sigma that minimizes Brier score for each market_type.
-        Only adjusts with >= 20 samples. Clamps to +/- 30% of original.
+        Recomputes probability with each test sigma using stored forecast_temp
+        and threshold extracted from ticker.
+        Only adjusts with >= 20 samples. Clamps to +/- 50% of default.
         """
         for market_type in ("high", "low"):
-            records = db.get_calibration_records(market_type, days_out_max=99, limit=50)
+            records = db.get_calibration_records(market_type, days_out_max=99, limit=100)
             if len(records) < 20:
                 continue
 
-            # Group by days_out bucket (approximated from market_date vs logged_at)
-            # For now, optimize a single sigma per market_type
-            original_sigma = DEFAULT_SIGMAS.get(1, 2.5)  # baseline
+            # Parse threshold from ticker for each record
+            parsed = []
+            for r in records:
+                if r["outcome"] is None or r["forecast_temp"] is None:
+                    continue
+                threshold = self._parse_threshold_from_ticker(r["ticker"])
+                if threshold is None:
+                    continue
+                parsed.append((r["forecast_temp"], threshold, r["outcome"], r["ticker"]))
+
+            if len(parsed) < 20:
+                continue
+
+            original_sigma = DEFAULT_SIGMAS.get(1, 4.0)
 
             best_sigma = original_sigma
             best_brier = float("inf")
 
-            for mult in [0.7, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.3]:
+            for mult in [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8]:
                 test_sigma = original_sigma * mult
                 total_brier = 0
-                count = 0
-                for r in records:
-                    if r["outcome"] is None:
-                        continue
-                    # We can't perfectly recalculate without the original strike,
-                    # but we can use the stored predicted_prob vs outcome
-                    total_brier += (r["predicted_prob"] - r["outcome"]) ** 2
-                    count += 1
+                for fcst, thresh, outcome, ticker in parsed:
+                    # Recompute probability with this sigma
+                    if "B" in ticker.split("-")[-1]:  # "greater than" bracket
+                        pred = 1 - normal_cdf(thresh, fcst, test_sigma)
+                    else:  # "T" = less than
+                        pred = normal_cdf(thresh, fcst, test_sigma)
+                    total_brier += (pred - outcome) ** 2
 
-                if count > 0:
-                    avg_brier = total_brier / count
-                    if avg_brier < best_brier:
-                        best_brier = avg_brier
-                        best_sigma = test_sigma
+                avg_brier = total_brier / len(parsed)
+                if avg_brier < best_brier:
+                    best_brier = avg_brier
+                    best_sigma = test_sigma
 
-            # Clamp to +/- 30%
-            clamped = max(original_sigma * 0.7, min(best_sigma, original_sigma * 1.3))
+            # Clamp to +/- 50% of default
+            clamped = max(original_sigma * 0.5, min(best_sigma, original_sigma * 1.5))
 
             # Update all days_out buckets proportionally
             for days_bucket in range(4):
@@ -304,7 +316,20 @@ class FairValueEstimator:
                 db.update_sigma("*", market_type, days_bucket, new_sigma, best_brier)
 
             log.info(f"Sigma update ({market_type}): best_sigma={clamped:.2f}, "
-                     f"brier={best_brier:.4f}, samples={len(records)}")
+                     f"brier={best_brier:.4f}, samples={len(parsed)}")
+
+    def _parse_threshold_from_ticker(self, ticker):
+        """Extract temperature threshold from ticker like KXHIGHNY-26FEB19-B40.5."""
+        parts = ticker.split("-")
+        if len(parts) < 3:
+            return None
+        bracket = parts[-1]
+        if bracket and bracket[0] in ("B", "T"):
+            try:
+                return float(bracket[1:])
+            except ValueError:
+                return None
+        return None
 
     def _calc_sigma_distance(self, market, mu, sigma):
         """How many sigmas the forecast is from the market's nearest threshold."""

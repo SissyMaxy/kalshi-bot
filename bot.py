@@ -250,19 +250,27 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             fair_value, est_meta = est_result
 
             midprice = market["midprice"]
-            edge = fair_value - midprice
+            raw_edge = fair_value - midprice
+
+            # Determine direction from midprice edge, then compute true edge
+            # against the ask price we'd actually pay
+            direction = "yes" if raw_edge > 0 else "no"
+            entry_price = market["yes_ask"] if direction == "yes" else market["no_ask"]
+            if entry_price <= 0 or entry_price >= 1:
+                continue
+
+            # True edge: our estimated value minus what we'd actually pay
+            if direction == "yes":
+                edge = fair_value - entry_price  # YES value = fair_value, cost = yes_ask
+            else:
+                edge = (1 - fair_value) - entry_price  # NO value = 1-fair_value, cost = no_ask
 
             # Use category-specific min_edge if learned, else global
             effective_min_edge = cycle_config.get(
                 f"min_edge_{market['category']}",
                 cycle_config["min_edge_threshold"]
             )
-            if abs(edge) < effective_min_edge:
-                continue
-
-            direction = "yes" if edge > 0 else "no"
-            entry_price = market["yes_ask"] if direction == "yes" else market["no_ask"]
-            if entry_price <= 0 or entry_price >= 1:
+            if edge < effective_min_edge:
                 continue
 
             # Skip if we already have a position in this ticker (DB check)
@@ -359,13 +367,14 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
         corr_group = c["corr_group"]
 
         # Sanity check (optional, uses Anthropic API)
+        trade_kelly_mult = 1.0
         if abs(edge) < 0.15:
             verdict = estimator.sanity_check(market, fair_value)
             if verdict == "SKIP":
                 log.info(f"  Claude says SKIP: {market['ticker']}")
                 continue
             if verdict == "REDUCE_SIZE":
-                cycle_config["kelly_multiplier"] *= 0.5
+                trade_kelly_mult = 0.5
 
         # Confidence multiplier from sigma distance (weather only)
         est_meta = c.get("est_meta", {})
@@ -376,6 +385,9 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             confidence_mult = 3.0
         elif sigma_conf >= 2.0:
             confidence_mult = 2.0
+        # Cap confidence boost in survival mode to limit concentration
+        if survival and confidence_mult > 2.0:
+            confidence_mult = 2.0
 
         # Position sizing with accuracy multiplier
         position_cost = sizer.calculate(
@@ -384,7 +396,7 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             bankroll=bankroll,
             config=cycle_config,
             accuracy_mult=accuracy_mult,
-            confidence_mult=confidence_mult,
+            confidence_mult=confidence_mult * trade_kelly_mult,
         )
         if position_cost <= 0:
             continue
