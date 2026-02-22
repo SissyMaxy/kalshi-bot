@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalshi Bot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            line-height: 1.5;
+            padding: 16px;
+        }
+        h1 {
+            font-size: 16px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        /* Summary bar */
+        .summary-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            flex: 1;
+            min-width: 120px;
+        }
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        .survival-active {
+            color: var(--yellow);
+            font-weight: bold;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .survival-off { color: var(--green); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .status-active { color: var(--green); }
+        .status-active::before { content: "\25CF "; }
+        .status-idle { color: var(--yellow); }
+        .status-idle::before { content: "\25CF "; }
+        .status-stale { color: var(--red); }
+        .status-stale::before { content: "\25CF "; }
+        .status-unknown { color: var(--text-secondary); }
+        .status-unknown::before { content: "\25CF "; }
+
+        /* Chart */
+        .chart-container { height: 300px; position: relative; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            text-align: left;
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-tertiary);
+        }
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        tr:hover td { background: var(--bg-tertiary); }
+        .ticker { color: var(--blue); }
+        .empty {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 20px;
+        }
+        .timestamp { color: var(--text-secondary); font-size: 12px; }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        .badge-weather { background: #1a3a2a; color: var(--green); }
+        .badge-crypto { background: #2a2a1a; color: var(--yellow); }
+        .badge-financial { background: #1a2a3a; color: var(--blue); }
+        .badge-economics { background: #2a1a3a; color: var(--purple); }
+        .badge-unknown { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+        /* Result badges */
+        .result-passed { color: var(--green); }
+        .result-blocked { color: var(--red); }
+        .result-capped { color: var(--yellow); }
+
+        /* Performance grid */
+        .perf-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
+        .perf-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .perf-card .stat-value { font-size: 24px; }
+        @media (max-width: 900px) {
+            .perf-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 11px;
+            padding: 8px;
+        }
+
+        /* Two-column layout for smaller tables */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 900px) {
+            .two-col { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Kalshi Bot Dashboard</h1>
+
+    <!-- Summary Bar -->
+    <div class="section">
+        <div class="summary-bar">
+            <div class="stat-card">
+                <div class="stat-label">Cash Balance</div>
+                <div class="stat-value" id="cash-balance">---</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Portfolio Value</div>
+                <div class="stat-value" id="portfolio-value">---</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Drawdown</div>
+                <div class="stat-value" id="drawdown">---</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Daily P&amp;L</div>
+                <div class="stat-value" id="daily-pnl">---</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Mode</div>
+                <div class="stat-value" id="survival-indicator">---</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Bot Status</div>
+                <div class="stat-value" id="bot-status">---</div>
+                <div class="stat-label" id="last-cycle"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Equity Curve -->
+    <div class="section">
+        <div class="section-title">Equity Curve</div>
+        <div class="chart-container">
+            <canvas id="equity-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Open Positions -->
+    <div class="section">
+        <div class="section-title">Open Positions</div>
+        <table id="positions-table">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Ticker</th><th>Dir</th><th>Qty</th>
+                    <th>Entry</th><th>Current</th><th>Unrealized</th>
+                    <th>%</th><th>Category</th>
+                </tr>
+            </thead>
+            <tbody><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+        </table>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="section">
+        <div class="section-title">Recent Trades</div>
+        <table id="trades-table">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Ticker</th><th>Dir</th><th>Qty</th>
+                    <th>Entry</th><th>P&amp;L</th><th>Exit Reason</th>
+                    <th>Category</th><th>Resolved</th>
+                </tr>
+            </thead>
+            <tbody><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+        </table>
+    </div>
+
+    <!-- Performance -->
+    <div class="section">
+        <div class="section-title">Performance</div>
+        <div class="perf-grid" style="margin-bottom: 16px;">
+            <div class="perf-card">
+                <div class="stat-label">Total Trades</div>
+                <div class="stat-value" id="perf-total">---</div>
+            </div>
+            <div class="perf-card">
+                <div class="stat-label">Win / Loss</div>
+                <div class="stat-value"><span id="perf-wins">-</span> / <span id="perf-losses">-</span></div>
+            </div>
+            <div class="perf-card">
+                <div class="stat-label">Win Rate</div>
+                <div class="stat-value" id="perf-winrate">---</div>
+            </div>
+            <div class="perf-card">
+                <div class="stat-label">Total P&amp;L</div>
+                <div class="stat-value" id="perf-pnl">---</div>
+            </div>
+            <div class="perf-card">
+                <div class="stat-label">Calibration Samples</div>
+                <div class="stat-value" id="cal-samples">---</div>
+            </div>
+            <div class="perf-card">
+                <div class="stat-label">Brier Score</div>
+                <div class="stat-value" id="cal-brier">---</div>
+            </div>
+        </div>
+        <div class="two-col">
+            <div>
+                <div class="section-title">By Category</div>
+                <table id="category-stats">
+                    <thead><tr><th>Category</th><th>Trades</th><th>Wins</th><th>Win%</th><th>P&amp;L</th></tr></thead>
+                    <tbody><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+            <div>
+                <div class="section-title">By Exit Reason</div>
+                <table id="exit-stats">
+                    <thead><tr><th>Reason</th><th>Trades</th><th>Win%</th><th>P&amp;L</th></tr></thead>
+                    <tbody><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Strategy Adapter -->
+    <div class="section">
+        <div class="section-title">Strategy Adapter (Learned Parameters)</div>
+        <table id="params-table">
+            <thead>
+                <tr>
+                    <th>Parameter</th><th>Scope</th><th>Old</th><th>New</th>
+                    <th>Reason</th><th>Win Rate</th><th>Updated</th>
+                </tr>
+            </thead>
+            <tbody><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        </table>
+    </div>
+
+    <!-- Order Ledger -->
+    <div class="section">
+        <div class="section-title">Order Ledger</div>
+        <table id="ledger-table">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Time</th><th>Action</th><th>Ticker</th>
+                    <th>Side</th><th>Qty</th><th>Price</th><th>Result</th>
+                </tr>
+            </thead>
+            <tbody><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        </table>
+    </div>
+
+    <div class="footer" id="refresh-time">Loading...</div>
+
+<script>
+let equityChart = null;
+
+function $(sel) { return document.querySelector(sel); }
+function fmtDollars(v) {
+    if (v == null) return '---';
+    return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
+}
+function fmtPct(v) {
+    if (v == null) return '---';
+    return v.toFixed(1) + '%';
+}
+function pnlClass(v) {
+    if (v > 0) return 'positive';
+    if (v < 0) return 'negative';
+    return '';
+}
+function badgeClass(cat) {
+    if (!cat) return 'badge-unknown';
+    const c = cat.toLowerCase();
+    if (c === 'weather') return 'badge-weather';
+    if (c === 'crypto') return 'badge-crypto';
+    if (c === 'financial') return 'badge-financial';
+    if (c === 'economics') return 'badge-economics';
+    return 'badge-unknown';
+}
+
+async function fetchJson(url) {
+    try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return await resp.json();
+    } catch (err) {
+        console.error('Fetch ' + url + ' failed:', err);
+        return null;
+    }
+}
+
+async function updateSummary() {
+    const d = await fetchJson('/api/summary');
+    if (!d) return;
+    $('#cash-balance').textContent = '$' + d.balance.toFixed(2);
+    $('#portfolio-value').textContent = '$' + d.portfolio_value.toFixed(2);
+    $('#drawdown').textContent = d.drawdown_pct.toFixed(1) + '%';
+    $('#drawdown').className = 'stat-value' + (d.drawdown_pct > 20 ? ' negative' : '');
+    $('#daily-pnl').textContent = fmtDollars(d.daily_pnl);
+    $('#daily-pnl').className = 'stat-value ' + pnlClass(d.daily_pnl);
+    const si = $('#survival-indicator');
+    si.textContent = d.survival_mode ? 'SURVIVAL' : 'NORMAL';
+    si.className = 'stat-value ' + (d.survival_mode ? 'survival-active' : 'survival-off');
+    const bs = $('#bot-status');
+    bs.textContent = d.bot_status.toUpperCase();
+    bs.className = 'stat-value status-' + d.bot_status;
+    if (d.last_cycle) {
+        $('#last-cycle').textContent = d.last_cycle.substring(0, 19).replace('T', ' ');
+    }
+}
+
+async function updateEquity() {
+    const d = await fetchJson('/api/equity');
+    if (!d || !d.labels.length) return;
+    const ctx = $('#equity-chart').getContext('2d');
+    if (equityChart) {
+        equityChart.data.labels = d.labels;
+        equityChart.data.datasets[0].data = d.balances;
+        equityChart.data.datasets[1].data = d.peaks;
+        equityChart.data.datasets[2].data = d.portfolio_values;
+        equityChart.update('none');
+    } else {
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: d.labels,
+                datasets: [
+                    {
+                        label: 'Cash',
+                        data: d.balances,
+                        borderColor: '#3fb950',
+                        backgroundColor: 'rgba(63,185,80,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    },
+                    {
+                        label: 'Peak Cash',
+                        data: d.peaks,
+                        borderColor: '#8b949e',
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'Portfolio',
+                        data: d.portfolio_values,
+                        borderColor: '#58a6ff',
+                        backgroundColor: 'rgba(88,166,255,0.05)',
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                        spanGaps: true,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { labels: { color: '#8b949e', font: { family: 'monospace' } } },
+                    tooltip: { callbacks: { label: c => c.dataset.label + ': $' + c.parsed.y.toFixed(2) } }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#8b949e', maxTicksLimit: 10, font: { size: 10 } },
+                        grid: { color: '#21262d' },
+                    },
+                    y: {
+                        ticks: { color: '#8b949e', callback: v => '$' + v.toFixed(0), font: { size: 10 } },
+                        grid: { color: '#21262d' },
+                    }
+                }
+            }
+        });
+    }
+}
+
+async function updatePositions() {
+    const d = await fetchJson('/api/positions');
+    if (!d) return;
+    const tbody = $('#positions-table tbody');
+    if (!d.positions.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">No open positions</td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.positions.map(p => `
+        <tr>
+            <td>${p.id}</td>
+            <td class="ticker">${p.ticker}</td>
+            <td>${p.direction.toUpperCase()}</td>
+            <td>${p.contracts}</td>
+            <td>$${p.entry_price.toFixed(2)}</td>
+            <td>${p.current_price != null ? '$' + p.current_price.toFixed(2) : '---'}</td>
+            <td class="${pnlClass(p.unrealized_pnl)}">${fmtDollars(p.unrealized_pnl)}</td>
+            <td class="${pnlClass(p.pnl_pct)}">${fmtPct(p.pnl_pct)}</td>
+            <td><span class="badge ${badgeClass(p.category)}">${p.category || '?'}</span></td>
+        </tr>
+    `).join('');
+}
+
+async function updateRecentTrades() {
+    const d = await fetchJson('/api/recent-trades');
+    if (!d) return;
+    const tbody = $('#trades-table tbody');
+    if (!d.trades.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">No resolved trades</td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.trades.map(t => `
+        <tr>
+            <td>${t.id}</td>
+            <td class="ticker">${t.ticker}</td>
+            <td>${t.direction.toUpperCase()}</td>
+            <td>${t.contracts}</td>
+            <td>$${t.entry_price.toFixed(2)}</td>
+            <td class="${t.won ? 'positive' : 'negative'}">${fmtDollars(t.pnl)}</td>
+            <td>${t.exit_reason || '---'}</td>
+            <td><span class="badge ${badgeClass(t.category)}">${t.category || '?'}</span></td>
+            <td class="timestamp">${(t.resolved_at || '').substring(0, 16)}</td>
+        </tr>
+    `).join('');
+}
+
+async function updatePerformance() {
+    const d = await fetchJson('/api/performance');
+    if (!d) return;
+    const o = d.overall;
+    $('#perf-total').textContent = o.total;
+    $('#perf-wins').textContent = o.wins;
+    $('#perf-losses').textContent = o.losses;
+    $('#perf-winrate').textContent = fmtPct(o.win_rate);
+    $('#perf-pnl').textContent = fmtDollars(o.total_pnl);
+    $('#perf-pnl').className = 'stat-value ' + pnlClass(o.total_pnl);
+    const c = d.calibration;
+    $('#cal-samples').textContent = c.samples;
+    $('#cal-brier').textContent = c.avg_brier != null ? c.avg_brier.toFixed(4) : '---';
+
+    const catBody = $('#category-stats tbody');
+    const cats = Object.entries(d.by_category);
+    if (!cats.length) {
+        catBody.innerHTML = '<tr><td colspan="5" class="empty">No data</td></tr>';
+    } else {
+        catBody.innerHTML = cats.map(([cat, s]) => `
+            <tr>
+                <td><span class="badge ${badgeClass(cat)}">${cat}</span></td>
+                <td>${s.total}</td>
+                <td>${s.wins}</td>
+                <td>${fmtPct(s.win_rate)}</td>
+                <td class="${pnlClass(s.pnl)}">${fmtDollars(s.pnl)}</td>
+            </tr>
+        `).join('');
+    }
+
+    const exitBody = $('#exit-stats tbody');
+    const exits = Object.entries(d.by_exit_reason);
+    if (!exits.length) {
+        exitBody.innerHTML = '<tr><td colspan="4" class="empty">No data</td></tr>';
+    } else {
+        exitBody.innerHTML = exits.map(([reason, s]) => `
+            <tr>
+                <td>${reason}</td>
+                <td>${s.total}</td>
+                <td>${fmtPct(s.win_rate)}</td>
+                <td class="${pnlClass(s.pnl)}">${fmtDollars(s.pnl)}</td>
+            </tr>
+        `).join('');
+    }
+}
+
+async function updateLearnedParams() {
+    const d = await fetchJson('/api/learned-params');
+    if (!d) return;
+    const tbody = $('#params-table tbody');
+    if (!d.params.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">No learned parameters yet</td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.params.map(p => `
+        <tr>
+            <td>${p.param_name}</td>
+            <td>${p.param_scope}</td>
+            <td>${p.old_value}</td>
+            <td>${p.new_value}</td>
+            <td title="${p.reason}">${p.reason.length > 50 ? p.reason.substring(0, 47) + '...' : p.reason}</td>
+            <td>${p.win_rate != null ? fmtPct(p.win_rate) : '---'}</td>
+            <td class="timestamp">${p.timestamp.substring(0, 16)}</td>
+        </tr>
+    `).join('');
+}
+
+async function updateLedger() {
+    const d = await fetchJson('/api/ledger');
+    if (!d) return;
+    const tbody = $('#ledger-table tbody');
+    if (!d.entries.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders</td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.entries.map(e => `
+        <tr>
+            <td>${e.id}</td>
+            <td class="timestamp">${e.timestamp.substring(0, 19)}</td>
+            <td>${e.action}</td>
+            <td class="ticker">${e.ticker}</td>
+            <td>${e.side.toUpperCase()}</td>
+            <td>${e.contracts}</td>
+            <td>${e.price_cents}c</td>
+            <td class="result-${e.result.toLowerCase()}">${e.result}</td>
+        </tr>
+    `).join('');
+}
+
+async function refreshAll() {
+    const start = Date.now();
+    await Promise.all([
+        updateSummary(),
+        updateEquity(),
+        updatePositions(),
+        updateRecentTrades(),
+        updatePerformance(),
+        updateLearnedParams(),
+        updateLedger(),
+    ]);
+    const elapsed = Date.now() - start;
+    $('#refresh-time').textContent =
+        'Last refresh: ' + new Date().toLocaleTimeString() + ' (' + elapsed + 'ms) \u2022 Next in 30s';
+}
+
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>
