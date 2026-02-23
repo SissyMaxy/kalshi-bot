@@ -158,8 +158,12 @@ class PositionManager:
                 "ticker": ticker,
             }
 
-        # EXIT: stop loss
-        if pnl_pct < stop_loss_threshold:
+        # EXIT: stop loss (non-weather only)
+        # Weather markets are binary events that resolve in hours.
+        # Stop losses on binary bets lock in losses before the information
+        # event — a $0.07 YES contract can dip to $0.04 and settle at $1.00.
+        # Weather exits are handled by edge_reversed and forecast checks above.
+        if trade["category"] != "weather" and pnl_pct < stop_loss_threshold:
             return {
                 "trade_id": trade["id"], "action": "exit",
                 "reason": f"stop_loss ({pnl_pct:.0%})",

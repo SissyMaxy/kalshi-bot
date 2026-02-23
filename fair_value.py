@@ -63,7 +63,7 @@ def _resolve_gridpoints():
 # Resolve on import
 _resolve_gridpoints()
 
-DEFAULT_SIGMAS = {0: 3.5, 1: 4.0, 2: 5.0, 3: 7.0}
+DEFAULT_SIGMAS = {0: 4.5, 1: 5.0, 2: 6.0, 3: 8.0}
 
 # ── Crypto configuration ──────────────────────────────────────────────
 # default_daily_vol: typical 1-day percentage move (BTC ~3%, ETH ~4%)

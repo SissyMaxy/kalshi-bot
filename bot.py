@@ -273,6 +273,27 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             if edge < effective_min_edge:
                 continue
 
+            # Weather payoff ratio filter: ensure at least ~1:1 risk/reward.
+            # NO at $0.65 risks $0.65 to make $0.35 — needs 65%+ win rate.
+            # YES at $0.35 risks $0.35 to make $0.65 — acceptable.
+            # Cap entry prices to avoid unfavorable asymmetry.
+            if market["category"] == "weather":
+                max_entry = 0.65 if direction == "no" else 0.35
+                if entry_price > max_entry:
+                    continue
+
+            # Same-day priority: NWS forecasts are most accurate day-of.
+            # Require higher edge for multi-day weather trades where
+            # sigma is larger and estimates are lower confidence.
+            if market["category"] == "weather":
+                hours_to_close = est_meta.get("hours_to_close", 24)
+                if hours_to_close > 36:  # 2+ days out
+                    if edge < effective_min_edge * 1.5:
+                        continue
+                elif hours_to_close > 18:  # next-day
+                    if edge < effective_min_edge * 1.25:
+                        continue
+
             # Skip if we already have a position in this ticker (DB check)
             existing = db.get_open_trades_by_ticker(market["ticker"])
             if existing:
