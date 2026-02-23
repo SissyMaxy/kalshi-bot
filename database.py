@@ -107,6 +107,14 @@ class Database:
             )
             self.conn.commit()
 
+        if current < 6:
+            self._migrate_v6()
+            self.conn.execute(
+                "INSERT INTO schema_version VALUES (6, ?)",
+                (datetime.now(timezone.utc).isoformat(),)
+            )
+            self.conn.commit()
+
     def _migrate_v1(self):
         """V1: Add order tracking, calibration, and sigma tables."""
         # New columns on trades (each wrapped in try/except for idempotency)
@@ -250,6 +258,17 @@ class Database:
         self.conn.commit()
         log.info("Database migrated to v4")
 
+    def _migrate_v6(self):
+        """V6: Add current_fair_value column to trades for live edge tracking."""
+        try:
+            self.conn.execute(
+                "ALTER TABLE trades ADD COLUMN current_fair_value REAL"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        self.conn.commit()
+        log.info("Database migrated to v6")
+
     def _migrate_v5(self):
         """V5: Add portfolio_value column to balances table."""
         try:
@@ -305,11 +324,12 @@ class Database:
         )
         self.conn.commit()
 
-    def update_trade_market_price(self, trade_id, current_price, unrealized_pnl):
+    def update_trade_market_price(self, trade_id, current_price, unrealized_pnl,
+                                  current_fair_value=None):
         self.conn.execute(
             """UPDATE trades SET current_market_price = ?,
-               unrealized_pnl = ? WHERE id = ?""",
-            (current_price, unrealized_pnl, trade_id)
+               unrealized_pnl = ?, current_fair_value = ? WHERE id = ?""",
+            (current_price, unrealized_pnl, current_fair_value, trade_id)
         )
         self.conn.commit()
 

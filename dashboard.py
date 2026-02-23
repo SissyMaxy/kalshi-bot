@@ -9,6 +9,19 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_data.db")
 
+# NWS forecast page URLs by series prefix (lat/lon from fair_value.py NWS_STATIONS)
+NWS_URLS = {
+    "KXHIGHNY":  "https://forecast.weather.gov/MapClick.php?lat=40.7789&lon=-73.9692",
+    "KXLOWNY":   "https://forecast.weather.gov/MapClick.php?lat=40.7789&lon=-73.9692",
+    "KXHIGHCHI": "https://forecast.weather.gov/MapClick.php?lat=41.9742&lon=-87.9073",
+    "KXLOWCHI":  "https://forecast.weather.gov/MapClick.php?lat=41.9742&lon=-87.9073",
+    "KXHIGHLA":  "https://forecast.weather.gov/MapClick.php?lat=34.0236&lon=-118.2912",
+    "KXHIGHDC":  "https://forecast.weather.gov/MapClick.php?lat=38.8512&lon=-77.0402",
+    "KXHIGHMIA": "https://forecast.weather.gov/MapClick.php?lat=25.7959&lon=-80.287",
+    "KXHIGHDEN": "https://forecast.weather.gov/MapClick.php?lat=39.8466&lon=-104.6562",
+    "KXLOWDEN":  "https://forecast.weather.gov/MapClick.php?lat=39.8466&lon=-104.6562",
+}
+
 
 def get_db():
     """Open a fresh read-only connection per request."""
@@ -61,11 +74,8 @@ def api_summary():
         ).fetchone()
         unrealized = unr_row["total"]
 
-        # Use Kalshi-reported portfolio value if available, else fallback
-        if stored_portfolio is not None:
-            portfolio_value = stored_portfolio
-        else:
-            portfolio_value = balance + exposure + unrealized
+        # Compute portfolio from live trade data (updated each cycle by position manager)
+        portfolio_value = balance + exposure + unrealized
         survival = balance < 15.0 or drawdown_pct >= 50.0
 
         bot_status = "unknown"
@@ -129,7 +139,8 @@ def api_positions():
             """SELECT id, ticker, title, category, direction, contracts,
                       original_contracts, entry_price, cost, fair_value, edge,
                       status, fill_status, current_market_price, unrealized_pnl,
-                      correlation_group
+                      correlation_group, forecast_temp, sigma_used, timestamp,
+                      current_fair_value
                FROM trades WHERE status IN ('open', 'exiting')
                ORDER BY id DESC"""
         ).fetchall()
@@ -146,9 +157,23 @@ def api_positions():
                 unrealized = 0
             pnl_pct = (unrealized / r["cost"] * 100) if r["cost"] > 0 else 0
 
+            # Build NWS URL from series prefix
+            series = r["ticker"].split("-")[0] if r["ticker"] else ""
+            nws_url = NWS_URLS.get(series)
+
+            # Compute current edge from live fair value
+            cfv = r["current_fair_value"]
+            current_edge = None
+            if cfv is not None and mid > 0:
+                if r["direction"] == "yes":
+                    current_edge = round(cfv - mid, 4)
+                else:
+                    current_edge = round(mid - cfv, 4)
+
             positions.append({
                 "id": r["id"],
                 "ticker": r["ticker"],
+                "title": r["title"],
                 "category": r["category"],
                 "direction": r["direction"],
                 "contracts": contracts,
@@ -157,9 +182,16 @@ def api_positions():
                 "current_price": round(mid, 2) if mid else None,
                 "unrealized_pnl": round(unrealized, 2),
                 "pnl_pct": round(pnl_pct, 1),
-                "edge": round(r["edge"], 3) if r["edge"] else None,
+                "entry_edge": round(r["edge"], 3) if r["edge"] else None,
+                "current_edge": current_edge,
+                "fair_value": round(r["fair_value"], 4) if r["fair_value"] else None,
+                "current_fair_value": round(cfv, 4) if cfv else None,
+                "forecast_temp": r["forecast_temp"],
+                "sigma_used": round(r["sigma_used"], 2) if r["sigma_used"] else None,
                 "status": r["status"],
                 "fill_status": r["fill_status"],
+                "opened_at": r["timestamp"],
+                "nws_url": nws_url,
             })
         return jsonify({"positions": positions})
     finally:

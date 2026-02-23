@@ -88,13 +88,14 @@ class PositionManager:
             exit_price = no_bid
             unrealized = (exit_price - trade["entry_price"]) * contracts
 
-        # Update mark-to-market
-        self.db.update_trade_market_price(trade["id"], current_mid, unrealized)
-
         # Re-estimate fair value
         scanner_market = self._build_scanner_market(market, trade)
         est_result = self.estimator.estimate(scanner_market)
         new_fair_value = est_result[0] if est_result is not None else None
+
+        # Update mark-to-market (includes current fair value for dashboard)
+        self.db.update_trade_market_price(
+            trade["id"], current_mid, unrealized, new_fair_value)
 
         if new_fair_value is None:
             return {"trade_id": trade["id"], "action": "hold",

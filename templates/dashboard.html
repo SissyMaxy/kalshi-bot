@@ -119,6 +119,29 @@
             border-bottom: 1px solid var(--border);
         }
         tr:hover td { background: var(--bg-tertiary); }
+        .pos-row { cursor: pointer; }
+        .pos-row:hover td { background: var(--bg-tertiary); }
+        .justification-row td {
+            padding: 4px 8px 12px 8px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-tertiary);
+        }
+        .justification {
+            color: var(--text-secondary);
+            font-size: 12px;
+            line-height: 1.6;
+            padding-left: 16px;
+        }
+        .justification .jlabel {
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+        .justification .jvalue {
+            color: var(--text-primary);
+        }
+        .justification .jedge {
+            font-weight: bold;
+        }
         .ticker { color: var(--blue); }
         .empty {
             text-align: center;
@@ -231,10 +254,10 @@
                 <tr>
                     <th>ID</th><th>Ticker</th><th>Dir</th><th>Qty</th>
                     <th>Entry</th><th>Current</th><th>Unrealized</th>
-                    <th>%</th><th>Category</th>
+                    <th>%</th><th>Entry Edge</th><th>Curr Edge</th><th>Category</th>
                 </tr>
             </thead>
-            <tbody><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+            <tbody><tr><td colspan="11" class="empty">Loading...</td></tr></tbody>
         </table>
     </div>
 
@@ -328,7 +351,10 @@
         </table>
     </div>
 
-    <div class="footer" id="refresh-time">Loading...</div>
+    <div class="footer">
+        <button id="refresh-btn" onclick="manualRefresh()" style="background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;font-size:12px;margin-right:8px">Refresh Now</button>
+        <span id="refresh-time">Loading...</span>
+    </div>
 
 <script>
 let equityChart = null;
@@ -460,16 +486,97 @@ async function updateEquity() {
     }
 }
 
+function buildJustification(p) {
+    const parts = [];
+
+    // Market question + NWS link
+    if (p.title) {
+        let marketLine = '<span class="jlabel">Market:</span> <span class="jvalue">' + p.title + '</span>';
+        if (p.nws_url) {
+            marketLine += ' <a href="' + p.nws_url + '" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;font-size:11px">[NWS Forecast \u2197]</a>';
+        }
+        parts.push(marketLine);
+    }
+
+    // Forecast info (weather trades)
+    if (p.forecast_temp != null) {
+        // Extract threshold from ticker: KXHIGHNY-26FEB12-B36.5 -> 36.5
+        const tickerParts = p.ticker.split('-');
+        const strikePart = tickerParts.length >= 3 ? tickerParts[tickerParts.length - 1] : '';
+        const threshold = strikePart.replace(/^[BT]/, '');
+        const strikeType = strikePart.startsWith('T') ? 'below' : 'above';
+
+        let forecastLine = '<span class="jlabel">Forecast:</span> <span class="jvalue">' + p.forecast_temp + '\u00b0F</span>';
+        if (threshold) {
+            forecastLine += ' <span class="jlabel">| Threshold:</span> <span class="jvalue">' + strikeType + ' ' + threshold + '\u00b0F</span>';
+            const distance = Math.abs(p.forecast_temp - parseFloat(threshold));
+            forecastLine += ' <span class="jlabel">| Distance:</span> <span class="jvalue">' + distance.toFixed(1) + '\u00b0F</span>';
+        }
+        parts.push(forecastLine);
+    }
+
+    // Model estimate — entry
+    const entryParts = [];
+    if (p.fair_value != null) {
+        entryParts.push('<span class="jlabel">Entry FV:</span> <span class="jvalue">$' + p.fair_value.toFixed(2) + ' (' + (p.fair_value * 100).toFixed(1) + '%)</span>');
+    }
+    if (p.entry_edge != null) {
+        const eePct = (p.entry_edge * 100).toFixed(1);
+        const eeColor = p.entry_edge > 0 ? 'positive' : 'negative';
+        entryParts.push('<span class="jlabel">Entry edge:</span> <span class="jedge ' + eeColor + '">' + (p.entry_edge > 0 ? '+' : '') + eePct + '%</span>');
+    }
+    if (p.sigma_used != null) {
+        entryParts.push('<span class="jlabel">Sigma:</span> <span class="jvalue">' + p.sigma_used + '\u00b0F</span>');
+    }
+    if (entryParts.length) {
+        parts.push(entryParts.join(' <span class="jlabel">|</span> '));
+    }
+
+    // Model estimate — current (live re-estimation)
+    const currParts = [];
+    if (p.current_fair_value != null) {
+        currParts.push('<span class="jlabel">Current FV:</span> <span class="jvalue">$' + p.current_fair_value.toFixed(2) + ' (' + (p.current_fair_value * 100).toFixed(1) + '%)</span>');
+    }
+    if (p.current_edge != null) {
+        const cePct = (p.current_edge * 100).toFixed(1);
+        const ceColor = p.current_edge > 0 ? 'positive' : 'negative';
+        currParts.push('<span class="jlabel">Current edge:</span> <span class="jedge ' + ceColor + '">' + (p.current_edge > 0 ? '+' : '') + cePct + '%</span>');
+    }
+    if (currParts.length) {
+        parts.push(currParts.join(' <span class="jlabel">|</span> '));
+    }
+
+    // Position sizing and timing
+    const metaParts = [];
+    metaParts.push('<span class="jlabel">Cost:</span> <span class="jvalue">$' + p.cost.toFixed(2) + '</span>');
+    if (p.opened_at) {
+        const opened = new Date(p.opened_at);
+        const now = new Date();
+        const hoursHeld = Math.max(0, (now - opened) / 3600000);
+        let heldStr;
+        if (hoursHeld < 1) heldStr = Math.round(hoursHeld * 60) + 'm';
+        else if (hoursHeld < 24) heldStr = hoursHeld.toFixed(1) + 'h';
+        else heldStr = (hoursHeld / 24).toFixed(1) + 'd';
+        metaParts.push('<span class="jlabel">Held:</span> <span class="jvalue">' + heldStr + '</span>');
+    }
+    if (p.status === 'exiting') {
+        metaParts.push('<span style="color:var(--yellow);font-weight:bold">EXITING</span>');
+    }
+    parts.push(metaParts.join(' <span class="jlabel">|</span> '));
+
+    return parts.join('<br>');
+}
+
 async function updatePositions() {
     const d = await fetchJson('/api/positions');
     if (!d) return;
     const tbody = $('#positions-table tbody');
     if (!d.positions.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty">No open positions</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="empty">No open positions</td></tr>';
         return;
     }
     tbody.innerHTML = d.positions.map(p => `
-        <tr>
+        <tr class="pos-row" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'">
             <td>${p.id}</td>
             <td class="ticker">${p.ticker}</td>
             <td>${p.direction.toUpperCase()}</td>
@@ -478,7 +585,12 @@ async function updatePositions() {
             <td>${p.current_price != null ? '$' + p.current_price.toFixed(2) : '---'}</td>
             <td class="${pnlClass(p.unrealized_pnl)}">${fmtDollars(p.unrealized_pnl)}</td>
             <td class="${pnlClass(p.pnl_pct)}">${fmtPct(p.pnl_pct)}</td>
+            <td class="${pnlClass(p.entry_edge)}">${p.entry_edge != null ? (p.entry_edge > 0 ? '+' : '') + (p.entry_edge * 100).toFixed(1) + '%' : '---'}</td>
+            <td class="${pnlClass(p.current_edge)}">${p.current_edge != null ? (p.current_edge > 0 ? '+' : '') + (p.current_edge * 100).toFixed(1) + '%' : '---'}</td>
             <td><span class="badge ${badgeClass(p.category)}">${p.category || '?'}</span></td>
+        </tr>
+        <tr class="justification-row">
+            <td colspan="11"><div class="justification">${buildJustification(p)}</div></td>
         </tr>
     `).join('');
 }
@@ -595,7 +707,22 @@ async function updateLedger() {
     `).join('');
 }
 
+const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
+let nextRefreshAt = 0;
+let countdownTimer = null;
+
+function updateCountdown() {
+    const remaining = Math.max(0, nextRefreshAt - Date.now());
+    const min = Math.floor(remaining / 60000);
+    const sec = Math.floor((remaining % 60000) / 1000);
+    const last = $('#refresh-time').dataset.last || '';
+    $('#refresh-time').textContent = last + ' \u2022 Next in ' + min + ':' + String(sec).padStart(2, '0');
+}
+
 async function refreshAll() {
+    const btn = $('#refresh-btn');
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
     const start = Date.now();
     await Promise.all([
         updateSummary(),
@@ -607,12 +734,20 @@ async function refreshAll() {
         updateLedger(),
     ]);
     const elapsed = Date.now() - start;
-    $('#refresh-time').textContent =
-        'Last refresh: ' + new Date().toLocaleTimeString() + ' (' + elapsed + 'ms) \u2022 Next in 30s';
+    btn.disabled = false;
+    btn.textContent = 'Refresh Now';
+    $('#refresh-time').dataset.last = 'Last refresh: ' + new Date().toLocaleTimeString() + ' (' + elapsed + 'ms)';
+    nextRefreshAt = Date.now() + REFRESH_INTERVAL;
+    updateCountdown();
+}
+
+async function manualRefresh() {
+    await refreshAll();
 }
 
 refreshAll();
-setInterval(refreshAll, 30000);
+setInterval(refreshAll, REFRESH_INTERVAL);
+countdownTimer = setInterval(updateCountdown, 1000);
 </script>
 </body>
 </html>
