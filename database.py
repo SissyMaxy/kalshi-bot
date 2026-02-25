@@ -384,13 +384,14 @@ class Database:
         )
         self.conn.commit()
 
-    def get_resolved_trades_by_category(self):
-        """Returns {category: [trade_dicts]} for all resolved trades with pnl."""
+    def get_resolved_trades_by_category(self, min_trade_id=0):
+        """Returns {category: [trade_dicts]} for resolved trades with pnl."""
         rows = self.conn.execute(
             """SELECT id, ticker, category, direction, entry_price, cost,
                       fair_value, edge, exit_price, pnl, exit_reason, resolved_at
                FROM trades
-               WHERE status = 'resolved' AND pnl IS NOT NULL"""
+               WHERE status = 'resolved' AND pnl IS NOT NULL AND id >= ?""",
+            (min_trade_id,)
         ).fetchall()
         result = {}
         for r in rows:
@@ -398,13 +399,15 @@ class Database:
             result.setdefault(cat, []).append(dict(r))
         return result
 
-    def get_resolved_trades_by_edge_bucket(self):
+    def get_resolved_trades_by_edge_bucket(self, min_trade_id=0):
         """Returns {bucket: [trade_dicts]} bucketed by edge size."""
         rows = self.conn.execute(
             """SELECT id, ticker, category, direction, entry_price, cost,
                       edge, pnl, exit_reason, resolved_at
                FROM trades
-               WHERE status = 'resolved' AND pnl IS NOT NULL AND edge IS NOT NULL"""
+               WHERE status = 'resolved' AND pnl IS NOT NULL AND edge IS NOT NULL
+                     AND id >= ?""",
+            (min_trade_id,)
         ).fetchall()
         buckets = {}
         for r in rows:
@@ -420,14 +423,15 @@ class Database:
             buckets.setdefault(label, []).append(dict(r))
         return buckets
 
-    def get_resolved_trades_by_exit_reason(self):
+    def get_resolved_trades_by_exit_reason(self, min_trade_id=0):
         """Returns {exit_reason: [trade_dicts]} for resolved trades."""
         rows = self.conn.execute(
             """SELECT id, ticker, category, direction, entry_price, cost,
                       edge, pnl, exit_reason, resolved_at
                FROM trades
                WHERE status = 'resolved' AND pnl IS NOT NULL
-                     AND exit_reason IS NOT NULL"""
+                     AND exit_reason IS NOT NULL AND id >= ?""",
+            (min_trade_id,)
         ).fetchall()
         result = {}
         for r in rows:

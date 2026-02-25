@@ -57,6 +57,13 @@ class RiskManager:
             kelly_scale *= 0.7
             log.warning(f"Daily loss ${daily_pnl:.2f} exceeds limit — reducing Kelly to {kelly_scale:.2f}")
 
+        # Floor: never go below 0.15 — at low bankroll we need to take
+        # meaningful positions on strong edges to recover, not $0.48 trades.
+        kelly_floor = 0.15
+        if kelly_scale < kelly_floor and bankroll >= 2.0:
+            log.info(f"Kelly floor applied: {kelly_scale:.2f} -> {kelly_floor:.2f}")
+            kelly_scale = kelly_floor
+
         action = "OK" if kelly_scale >= 0.70 else "REDUCE"
         return action, kelly_scale
 

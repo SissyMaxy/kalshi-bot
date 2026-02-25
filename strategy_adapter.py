@@ -15,6 +15,11 @@ MIN_SAMPLE_SIZE = 10
 # Maximum adjustment per cycle: +/- 20% of the baseline value
 MAX_ADJUSTMENT_RATIO = 0.20
 
+# Only analyze trades from after critical bug fixes (sigma calibration,
+# reconciliation fix, position cap, etc.). Earlier trades had inflated
+# contracts, sigma=0, and stop losses destroying weather positions.
+MIN_TRADE_ID = 80
+
 # Win rate thresholds
 CATEGORY_DISABLE_WIN_RATE = 0.30
 CATEGORY_BOOST_WIN_RATE = 0.60
@@ -91,7 +96,7 @@ class StrategyAdapter:
         - Win rate > 60%: lower min_edge slightly
         """
         changes = {}
-        by_category = self.db.get_resolved_trades_by_category()
+        by_category = self.db.get_resolved_trades_by_category(min_trade_id=MIN_TRADE_ID)
 
         for category, trades in by_category.items():
             if len(trades) < MIN_SAMPLE_SIZE:
@@ -157,7 +162,7 @@ class StrategyAdapter:
         If small edges consistently lose, raise global min_edge_threshold.
         """
         changes = {}
-        by_bucket = self.db.get_resolved_trades_by_edge_bucket()
+        by_bucket = self.db.get_resolved_trades_by_edge_bucket(min_trade_id=MIN_TRADE_ID)
 
         # Check if small edges are unprofitable
         small_bucket = by_bucket.get("08-12", [])
@@ -214,7 +219,7 @@ class StrategyAdapter:
         If stop_loss exits would have mostly won, loosen the stop loss.
         """
         changes = {}
-        by_exit = self.db.get_resolved_trades_by_exit_reason()
+        by_exit = self.db.get_resolved_trades_by_exit_reason(min_trade_id=MIN_TRADE_ID)
 
         # Analyze stop_loss exits
         stop_losses = by_exit.get("stop_loss", [])

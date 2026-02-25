@@ -420,6 +420,9 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             confidence_mult=confidence_mult * trade_kelly_mult,
         )
         if position_cost <= 0:
+            log.info(f"  SKIP {market['ticker']}: position_cost=0 "
+                     f"(edge={edge:+.3f} kelly={cycle_config['kelly_multiplier']:.4f} "
+                     f"price=${entry_price:.2f} bankroll=${bankroll:.2f})")
             continue
 
         num_contracts = int(position_cost / entry_price)
@@ -439,6 +442,7 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             position_cost, corr_group, market["category"],
             db, bankroll, cycle_config
         ):
+            log.info(f"  SKIP {market['ticker']}: exposure cap blocked")
             continue
 
         # SAFETY: Final pre-trade API position check (belt-and-suspenders)

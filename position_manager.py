@@ -113,10 +113,7 @@ class PositionManager:
 
         # Adaptive thresholds — survival mode tightens, learned params may adjust
         edge_reversal_threshold = -0.01 if survival else -0.03
-        if trade["category"] == "weather":
-            edge_gone_threshold = -0.01  # weather: only exit if edge actually reverses
-        else:
-            edge_gone_threshold = 0.05 if survival else self.config.get("edge_gone_threshold", 0.03)
+        edge_gone_threshold = 0.05 if survival else self.config.get("edge_gone_threshold", 0.03)
         stop_loss_threshold = -0.30 if survival else self.config.get("stop_loss_pct", -0.50)
 
         # EXIT: edge reversed
@@ -129,24 +126,18 @@ class PositionManager:
                 "ticker": ticker,
             }
 
-        # EXIT: edge evaporated with time remaining
-        if current_edge < edge_gone_threshold and hours_to_close > 2:
-            # Weather: hold if NWS forecast hasn't materially changed
-            if (trade["category"] == "weather"
-                    and self._weather_forecast_stable(trade, market)):
-                log.info(
-                    f"  HOLD trade #{trade['id']} {ticker}: edge_gone "
-                    f"({current_edge:+.2f}) but forecast stable — "
-                    f"market converging to fair value"
-                )
-            else:
-                return {
-                    "trade_id": trade["id"], "action": "exit",
-                    "reason": f"edge_gone ({current_edge:+.2f})",
-                    "exit_price": exit_price, "unrealized": unrealized,
-                    "direction": trade["direction"], "contracts": contracts,
-                    "ticker": ticker,
-                }
+        # EXIT: edge evaporated with time remaining (non-weather only)
+        # Weather trades are binary events that settle in hours.
+        # Edge_gone exits are premature 80% of the time (learned_params data).
+        # Weather exits are handled by edge_reversed above.
+        if trade["category"] != "weather" and current_edge < edge_gone_threshold and hours_to_close > 2:
+            return {
+                "trade_id": trade["id"], "action": "exit",
+                "reason": f"edge_gone ({current_edge:+.2f})",
+                "exit_price": exit_price, "unrealized": unrealized,
+                "direction": trade["direction"], "contracts": contracts,
+                "ticker": ticker,
+            }
 
         # EXIT: take profit near close (non-weather — weather settles at $1)
         if hours_to_close < 2 and unrealized > 0 and trade["category"] != "weather":

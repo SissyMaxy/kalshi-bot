@@ -80,8 +80,13 @@ class PositionSizer:
             position = entry_price  # exactly 1 contract
             log.debug(f"Survival override: 1 contract @ ${entry_price:.2f}")
 
-        # Floor at $1 (Kalshi minimum) — except survival allows smaller
-        min_trade = entry_price if survival else 1.0
+        # Floor: allow 1-contract trades on cheap contracts with strong edge
+        if survival:
+            min_trade = entry_price
+        elif edge >= 0.12 and entry_price <= 0.15:
+            min_trade = entry_price  # strong edge on cheap contract — allow it
+        else:
+            min_trade = 1.0
         if position < min_trade:
             return 0
 

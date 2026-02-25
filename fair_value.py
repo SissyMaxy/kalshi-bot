@@ -65,6 +65,17 @@ _resolve_gridpoints()
 
 DEFAULT_SIGMAS = {0: 4.5, 1: 5.0, 2: 6.0, 3: 8.0}
 
+# Per-city corrections derived from calibration data (10-11 date samples each).
+# sigma_mult: scales sigma to match observed forecast error variance.
+# bias: systematic forecast error (positive = actuals run hotter than forecast).
+# NYC is baseline (most accurate). Chicago & Denver have warm biases.
+CITY_CORRECTIONS = {
+    "NYC":     {"sigma_mult": 1.0, "bias": 0.0},
+    "Chicago": {"sigma_mult": 1.3, "bias": +2.2},
+    "Miami":   {"sigma_mult": 1.2, "bias": 0.0},
+    "Denver":  {"sigma_mult": 1.3, "bias": +2.8},
+}
+
 # ── Crypto configuration ──────────────────────────────────────────────
 # default_daily_vol: typical 1-day percentage move (BTC ~3%, ETH ~4%)
 
@@ -214,6 +225,11 @@ class FairValueEstimator:
                         f"— using obs as ceiling"
                     )
                     forecast_temp = obs_temp
+
+        # Apply city-specific corrections from calibration data
+        corrections = CITY_CORRECTIONS.get(city, {})
+        sigma *= corrections.get("sigma_mult", 1.0)
+        forecast_temp += corrections.get("bias", 0.0)
 
         # Skip trades where forecast is too close to threshold (coin flip territory)
         nearest_threshold = self._get_nearest_threshold(market)
