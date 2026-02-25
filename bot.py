@@ -39,6 +39,7 @@ from order_manager import OrderManager, compute_correlation_group
 from position_manager import PositionManager
 from strategy_adapter import StrategyAdapter
 from safe_order import place_order_safe
+from sanity_checks import SanityChecker
 
 CONFIG = {
     "scan_interval_minutes": 5,
@@ -166,6 +167,19 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             f"max_pos={cycle_config['max_position_pct']:.0%} | "
             f"survival={'YES' if survival else 'no'}"
         )
+
+    # ── PHASE 2.5: SANITY CHECKS ────────────────────────────────────
+    checker = None
+    if not scan_only:
+        try:
+            checker = SanityChecker(client, db, cycle_config)
+            sanity = checker.run_all(bankroll=bankroll, skip_api=False)
+            if sanity.has_critical:
+                log.critical(f"SANITY CHECK CRITICAL: {sanity.summary}")
+                log.critical("Halting new trades this cycle. Positions still managed.")
+                halted = True
+        except Exception as e:
+            log.error(f"Sanity check error (non-fatal): {e}")
 
     # ── PHASE 3: EVALUATE EXISTING POSITIONS ────────────────────────
     # Always runs, even when halted — must manage/exit positions
@@ -459,6 +473,22 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
             log.warning(f"BLOCKED: {market['ticker']} already held on Kalshi "
                         f"(caught by final safety check)")
             continue
+
+        # Pre-trade sanity gate (last line of defense before money moves)
+        if not scan_only and checker:
+            ok, reason = checker.check_pre_trade(
+                ticker=market["ticker"],
+                direction=direction,
+                edge=edge,
+                fair_value=fair_value,
+                entry_price=entry_price,
+                num_contracts=num_contracts,
+                cost=position_cost,
+                bankroll=bankroll,
+            )
+            if not ok:
+                log.warning(f"  SANITY BLOCKED: {market['ticker']} -- {reason}")
+                continue
 
         conf_tag = f", conf={sigma_conf:.1f}\u03c3 x{confidence_mult:.0f}" if confidence_mult > 1 else ""
         log.info(

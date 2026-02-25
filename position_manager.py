@@ -192,6 +192,17 @@ class PositionManager:
                         f"contracts={contracts}, price={exit_price}")
             return False
 
+        # Pre-exit sanity gate
+        try:
+            from sanity_checks import SanityChecker
+            checker = SanityChecker(self.client, self.db, self.config)
+            ok, reason = checker.check_pre_exit(action["trade_id"], contracts)
+            if not ok:
+                log.critical(f"  SANITY BLOCKED EXIT: trade #{trade['id']} -- {reason}")
+                return False
+        except Exception as e:
+            log.error(f"  Pre-exit sanity check error (proceeding): {e}")
+
         try:
             result = place_order_safe(
                 self.client, self.db, trade["ticker"],
