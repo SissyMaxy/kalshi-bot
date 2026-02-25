@@ -48,7 +48,7 @@ CONFIG = {
     "max_total_exposure_pct": 0.50,
     "min_edge_threshold": 0.08,
     # Category-specific edge thresholds (override global min_edge_threshold)
-    "min_edge_weather": 0.06,       # weather is our edge — take more at-bats
+    "min_edge_weather": 0.10,       # require strong signal (was 0.06, too loose)
     "min_edge_financial": 0.30,     # no edge in crypto/financial — effectively disabled
     "min_edge_economics": 0.30,     # no edge in economics — effectively disabled
     "min_volume_24h": 25,
@@ -275,11 +275,20 @@ def run_cycle(client, scanner, estimator, sizer, risk_mgr, db,
 
             # Weather payoff ratio filter: ensure at least ~1:1 risk/reward.
             # NO at $0.65 risks $0.65 to make $0.35 — needs 65%+ win rate.
-            # YES at $0.35 risks $0.35 to make $0.65 — acceptable.
+            # YES at $0.20 risks $0.20 to make $0.80 — only take cheap longs.
             # Cap entry prices to avoid unfavorable asymmetry.
             if market["category"] == "weather":
-                max_entry = 0.65 if direction == "no" else 0.35
+                max_entry = 0.65 if direction == "no" else 0.20
                 if entry_price > max_entry:
+                    continue
+
+            # Minimum probability floor: don't bet on extreme tail events.
+            # YES bets at <15% predicted probability almost never win (6% historical).
+            # NO bets at >85% predicted are equally dangerous (overconfidence).
+            if market["category"] == "weather":
+                if direction == "yes" and fair_value < 0.15:
+                    continue
+                if direction == "no" and fair_value > 0.85:
                     continue
 
             # Same-day priority: NWS forecasts are most accurate day-of.

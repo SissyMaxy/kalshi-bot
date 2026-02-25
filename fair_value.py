@@ -63,7 +63,7 @@ def _resolve_gridpoints():
 # Resolve on import
 _resolve_gridpoints()
 
-DEFAULT_SIGMAS = {0: 4.5, 1: 5.0, 2: 6.0, 3: 8.0}
+DEFAULT_SIGMAS = {0: 2.5, 1: 3.0, 2: 4.0, 3: 6.0}
 
 # Per-city corrections derived from calibration data (10-11 date samples each).
 # sigma_mult: scales sigma to match observed forecast error variance.
@@ -276,63 +276,16 @@ class FairValueEstimator:
 
     def update_sigmas(self, db):
         """
-        Adjust sigma values based on calibration results.
-        Finds optimal sigma that minimizes Brier score for each market_type.
-        Recomputes probability with each test sigma using stored forecast_temp
-        and threshold extracted from ticker.
-        Only adjusts with >= 20 samples. Clamps to +/- 50% of default.
+        Sigma auto-tuning — DISABLED.
+        The previous implementation had a bug: it used ticker prefix (T/B) to infer
+        market direction instead of the actual strike_type from the Kalshi API.
+        T-prefix markets can be EITHER "greater than" or "less than" depending on
+        the specific market. This caused ~28% of calibration samples to have inverted
+        probabilities, which led the optimizer to inflate sigma from 2.5 to 4.5,
+        making the model catastrophically overconfident on tail bets.
+        TODO: Re-enable after storing strike_type in calibration table.
         """
-        for market_type in ("high", "low"):
-            records = db.get_calibration_records(market_type, days_out_max=99, limit=100)
-            if len(records) < 20:
-                continue
-
-            # Parse threshold from ticker for each record
-            parsed = []
-            for r in records:
-                if r["outcome"] is None or r["forecast_temp"] is None:
-                    continue
-                threshold = self._parse_threshold_from_ticker(r["ticker"])
-                if threshold is None:
-                    continue
-                parsed.append((r["forecast_temp"], threshold, r["outcome"], r["ticker"]))
-
-            if len(parsed) < 20:
-                continue
-
-            original_sigma = DEFAULT_SIGMAS.get(1, 4.0)
-
-            best_sigma = original_sigma
-            best_brier = float("inf")
-
-            for mult in [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8]:
-                test_sigma = original_sigma * mult
-                total_brier = 0
-                for fcst, thresh, outcome, ticker in parsed:
-                    # Recompute probability with this sigma
-                    if "B" in ticker.split("-")[-1]:  # "greater than" bracket
-                        pred = 1 - normal_cdf(thresh, fcst, test_sigma)
-                    else:  # "T" = less than
-                        pred = normal_cdf(thresh, fcst, test_sigma)
-                    total_brier += (pred - outcome) ** 2
-
-                avg_brier = total_brier / len(parsed)
-                if avg_brier < best_brier:
-                    best_brier = avg_brier
-                    best_sigma = test_sigma
-
-            # Clamp to +/- 50% of default
-            clamped = max(original_sigma * 0.5, min(best_sigma, original_sigma * 1.5))
-
-            # Update all days_out buckets proportionally
-            for days_bucket in range(4):
-                base = DEFAULT_SIGMAS.get(days_bucket, 6.0)
-                ratio = clamped / original_sigma
-                new_sigma = base * ratio
-                db.update_sigma("*", market_type, days_bucket, new_sigma, best_brier)
-
-            log.info(f"Sigma update ({market_type}): best_sigma={clamped:.2f}, "
-                     f"brier={best_brier:.4f}, samples={len(parsed)}")
+        log.info("Sigma auto-tuning: DISABLED (pending strike_type fix)")
 
     def _parse_threshold_from_ticker(self, ticker):
         """Extract temperature threshold from ticker like KXHIGHNY-26FEB19-B40.5."""
@@ -672,11 +625,12 @@ class FairValueEstimator:
         return f"{year}-{month:02d}-{day:02d}"
 
     def _days_until(self, date_str):
-        """Calculate days from now until the target date."""
+        """Calculate days from now until the target date (rounded, not truncated)."""
         try:
             target = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             now = datetime.now(timezone.utc)
-            return max(0, (target - now).days)
+            delta_days = (target - now).total_seconds() / 86400
+            return max(0, round(delta_days))
         except ValueError:
             return 3
 
