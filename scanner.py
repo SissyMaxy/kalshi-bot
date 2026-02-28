@@ -109,12 +109,22 @@ class MarketScanner:
         if m["midprice"] <= 0:
             return False
 
-        # Volume filter
-        if m["volume_24h"] < cfg["min_volume_24h"]:
+        # Volume filter (soft — volume_24h resets daily on weather markets)
+        if m["volume_24h"] < cfg.get("min_volume_24h", 0):
+            return False
+
+        # Open interest filter (better liquidity proxy for weather)
+        if m["open_interest"] < cfg.get("min_open_interest", 0):
             return False
 
         # Spread filter
         if m["spread"] > cfg["max_spread"] and m["spread"] < 999:
+            return False
+
+        # Skip "between" brackets for weather — narrow 1°F windows are traps.
+        # Model can't distinguish 7% from 97% on these; a 1°F forecast error
+        # flips the outcome completely. Only greater/less have robust edge.
+        if m["category"] == "weather" and m.get("strike_type") == "between":
             return False
 
         # Extreme price filter (no value in trading near 0 or 1)

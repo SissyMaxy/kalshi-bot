@@ -52,8 +52,8 @@ CONFIG = {
     "min_edge_weather": 0.10,       # require strong signal (was 0.06, too loose)
     "min_edge_financial": 0.30,     # no edge in crypto/financial — effectively disabled
     "min_edge_economics": 0.30,     # no edge in economics — effectively disabled
-    "min_volume_24h": 25,
-    "min_open_interest": 50,
+    "min_volume_24h": 0,           # volume resets daily; use OI + spread for liquidity
+    "min_open_interest": 100,
     "max_spread": 0.25,
     "daily_loss_limit_pct": 0.10,
     # Survival mode: tighten everything when bankroll is critically low

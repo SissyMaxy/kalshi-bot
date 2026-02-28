@@ -76,6 +76,12 @@ CITY_CORRECTIONS = {
     "Denver":  {"sigma_mult": 1.3, "bias": +2.8},
 }
 
+# UTC offsets for sigma collapse (standard time — late Feb is before DST)
+CITY_UTC_OFFSETS = {
+    "NYC": -5, "Chicago": -6, "LA": -8, "DC": -5,
+    "Miami": -5, "Denver": -7,
+}
+
 # ── Crypto configuration ──────────────────────────────────────────────
 # default_daily_vol: typical 1-day percentage move (BTC ~3%, ETH ~4%)
 
@@ -230,6 +236,17 @@ class FairValueEstimator:
         corrections = CITY_CORRECTIONS.get(city, {})
         sigma *= corrections.get("sigma_mult", 1.0)
         forecast_temp += corrections.get("bias", 0.0)
+
+        # Same-day sigma collapse: by afternoon the actual temp is known,
+        # so forecast uncertainty is much smaller than the morning sigma.
+        if is_same_day:
+            collapse_mult = self._same_day_sigma_mult(city, is_high)
+            if collapse_mult < 1.0:
+                log.debug(
+                    f"  Sigma collapse {market['ticker']}: "
+                    f"{sigma:.2f} x {collapse_mult:.2f} = {sigma * collapse_mult:.2f}"
+                )
+                sigma *= collapse_mult
 
         # Skip trades where forecast is too close to threshold (coin flip territory)
         nearest_threshold = self._get_nearest_threshold(market)
@@ -556,6 +573,36 @@ class FairValueEstimator:
             return 24
 
     # ── Weather helpers ───────────────────────────────────────────────
+
+    def _same_day_sigma_mult(self, city, is_high):
+        """Scale down sigma for same-day markets based on local time of day.
+
+        HIGH temps peak ~2-4 PM local. By afternoon, the high is essentially
+        determined. LOW temps bottom out ~5-7 AM, so by late morning they're known.
+
+        Returns a multiplier 0.15 - 1.0 to apply to sigma.
+        """
+        utc_offset = CITY_UTC_OFFSETS.get(city, -5)
+        local_hour = (datetime.now(timezone.utc).hour + utc_offset) % 24
+
+        if is_high:
+            # Daily high peaks ~2-4 PM local
+            if local_hour < 10:
+                return 1.0     # morning: full uncertainty
+            elif local_hour < 13:
+                return 0.7     # late morning: warming, partial info
+            elif local_hour < 16:
+                return 0.35    # afternoon: near/at peak
+            else:
+                return 0.15    # evening: peak passed, high is known
+        else:
+            # Daily low bottoms ~5-7 AM local
+            if local_hour < 5:
+                return 0.7     # pre-dawn: cooling, partial info
+            elif local_hour < 8:
+                return 0.35    # dawn: near/at minimum
+            else:
+                return 0.15    # daytime: low already happened
 
     def _get_nws_forecast(self, office, grid_x, grid_y):
         """Fetch NWS gridpoint forecast. Cached per scan cycle."""
