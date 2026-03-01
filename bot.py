@@ -49,7 +49,7 @@ CONFIG = {
     "max_total_exposure_pct": 0.50,
     "min_edge_threshold": 0.08,
     # Category-specific edge thresholds (override global min_edge_threshold)
-    "min_edge_weather": 0.10,       # require strong signal (was 0.06, too loose)
+    "min_edge_weather": 0.15,       # require strong signal (was 0.10, model still miscalibrated)
     "min_edge_financial": 0.30,     # no edge in crypto/financial — effectively disabled
     "min_edge_economics": 0.30,     # no edge in economics — effectively disabled
     "min_volume_24h": 0,           # volume resets daily; use OI + spread for liquidity

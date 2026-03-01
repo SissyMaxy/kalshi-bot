@@ -63,17 +63,22 @@ def _resolve_gridpoints():
 # Resolve on import
 _resolve_gridpoints()
 
-DEFAULT_SIGMAS = {0: 2.5, 1: 3.0, 2: 4.0, 3: 6.0}
+DEFAULT_SIGMAS = {0: 3.5, 1: 4.5, 2: 5.5, 3: 8.0}
 
 # Per-city corrections derived from calibration data (10-11 date samples each).
 # sigma_mult: scales sigma to match observed forecast error variance.
 # bias: systematic forecast error (positive = actuals run hotter than forecast).
 # NYC is baseline (most accurate). Chicago & Denver have warm biases.
+# City corrections DISABLED — derived from 10-11 samples each, caused more harm
+# than good. Denver +2.8F directly caused B66.5 disaster. Chicago +2.2F didn't
+# prevent -$17.89 losses. Zeroed out until we have 50+ samples per city.
 CITY_CORRECTIONS = {
     "NYC":     {"sigma_mult": 1.0, "bias": 0.0},
-    "Chicago": {"sigma_mult": 1.3, "bias": +2.2},
-    "Miami":   {"sigma_mult": 1.2, "bias": 0.0},
-    "Denver":  {"sigma_mult": 1.3, "bias": +2.8},
+    "Chicago": {"sigma_mult": 1.0, "bias": 0.0},
+    "Miami":   {"sigma_mult": 1.0, "bias": 0.0},
+    "Denver":  {"sigma_mult": 1.0, "bias": 0.0},
+    "LA":      {"sigma_mult": 1.0, "bias": 0.0},
+    "DC":      {"sigma_mult": 1.0, "bias": 0.0},
 }
 
 # UTC offsets for sigma collapse (standard time — late Feb is before DST)
