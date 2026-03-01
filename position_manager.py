@@ -118,6 +118,22 @@ class PositionManager:
 
         # EXIT: edge reversed
         if current_edge < edge_reversal_threshold:
+            # Weather trades: only exit if the NWS forecast actually shifted.
+            # Model re-estimates fluctuate with sigma collapse and market moves,
+            # but the underlying forecast is what matters for binary weather bets.
+            # Miami T83 lesson: bot sold 8x at 11c, settled at $1.00 = $7.04 missed.
+            if trade["category"] == "weather":
+                if self._weather_forecast_stable(trade, market):
+                    log.info(
+                        f"  HOLD weather #{trade['id']} {ticker}: "
+                        f"edge={current_edge:+.2f} but forecast stable"
+                    )
+                    return {
+                        "trade_id": trade["id"], "action": "hold",
+                        "reason": f"edge_neg_but_forecast_stable ({current_edge:+.2f})",
+                        "unrealized": unrealized,
+                    }
+
             return {
                 "trade_id": trade["id"], "action": "exit",
                 "reason": f"edge_reversed ({current_edge:+.2f})",
